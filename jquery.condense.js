@@ -31,9 +31,9 @@
   // plugin definition
   $.fn.condense = function(options) {
     
-    $.metadata ? debug('metadata plugin detected') : debug('metadata plugin not present');//detect the metadata plugin?
 
     var opts = $.extend({}, $.fn.condense.defaults, options); // build main options before element iteration
+    $.metadata ? debug('metadata plugin detected', opts) : debug('metadata plugin not present', opts);//detect the metadata plugin?
 
     // iterate each matched element
     return this.each(function() {
@@ -42,7 +42,7 @@
       // support metadata plugin (v2.0)
 	    var o = $.metadata ? $.extend({}, opts, $this.metadata()) : opts; // build element specific options
      
-      debug('Condensing ['+$this.text().length+']: '+$this.text());
+      debug('Condensing ['+$this.text().length+']: '+$this.text(), opts);
       
       var clone = cloneCondensed($this,o);
 
@@ -53,15 +53,18 @@
         var controlMore = " <span class='condense_control condense_control_more' style='cursor:pointer;'>"+o.moreText+"</span>";
         var controlLess = " <span class='condense_control condense_control_less' style='cursor:pointer;'>"+o.lessText+"</span>";
         clone.append(o.ellipsis + controlMore);
-        $this.after(clone).hide().append(controlLess);
+        var expanded = $this.after(clone).hide();
+        if (o.lessText !== '') {
+          expanded.append(controlLess);
+        }
 
         $('.condense_control_more',clone).click(function(){
-          debug('moreControl clicked.');
+          debug('moreControl clicked.', opts);
           triggerExpand($(this),o)
         });
 
         $('.condense_control_less',$this).click(function(){
-          debug('lessControl clicked.');
+          debug('lessControl clicked.', opts);
           triggerCondense($(this),o)
         });
       }
@@ -74,7 +77,7 @@
     // also, dont count tag declarations as part of the text length.
     // check the length of the text first, return false if too short.
     if ($.trim(elem.text()).length <= opts.condensedLength + opts.minTrail){
-      debug('element too short: skipping.');
+      debug('element too short: skipping.', opts);
       return false;
     } 
 
@@ -86,35 +89,35 @@
 
     do {
       // find the location of the next potential break-point.
-      var loc = findDelimiterLocation(fullbody, opts.delim, (opts.condensedLength + delta));
+      var loc = findDelimiterLocation(fullbody, opts.delim, (opts.condensedLength + delta), opts);
       //set the html of the clone to the substring html of the original
       clone.html($.trim(fullbody.substring(0,(loc+1))));
       var cloneTextLength = clone.text().length;
       var cloneHtmlLength = clone.html().length;
       delta = clone.html().length - cloneTextLength; 
-      debug ("condensing... [html-length:"+cloneHtmlLength+" text-length:"+cloneTextLength+" delta: "+delta+" break-point: "+loc+"]");
+      debug ("condensing... [html-length:"+cloneHtmlLength+" text-length:"+cloneTextLength+" delta: "+delta+" break-point: "+loc+"]", opts);
     //is the length of the clone text long enough?
-    }while(clone.text().length < opts.condensedLength )
+    }while(clone.text().length < opts.condensedLength );
 
     //  after skipping ahead to the delimiter, do we still have enough trailing text?
     if ((fulltext.length - cloneTextLength) < opts.minTrail){
-      debug('not enough trailing text: skipping.');
+      debug('not enough trailing text: skipping.', opts);
       return false;
     }
 
-    debug('clone condensed. [text-length:'+cloneTextLength+']');
+    debug('clone condensed. [text-length:'+cloneTextLength+']', opts);
     return clone;
   }
 
 
-  function findDelimiterLocation(html, delim, startpos){
+  function findDelimiterLocation(html, delim, startpos, opts){
     // find the location inside the html of the delimiter, starting at the specified length.
     var foundDelim = false;
     var loc = startpos;    
     do {
-      var loc = html.indexOf(delim, loc);
+      loc = html.indexOf(delim, loc);
       if (loc < 0){
-        debug ("No delimiter found.");
+        debug ("No delimiter found.", opts);
         return html.length;
       } // if there is no delimiter found, just return the length of the entire html string.
       foundDelim = true;
@@ -123,8 +126,8 @@
         loc++;
         foundDelim = false;
       }
-    }while(!foundDelim)
-    debug ("Delimiter found in html at: "+loc);
+    }while(!foundDelim);
+    debug ("Delimiter found in html at: "+loc, opts);
     return loc;
   }
 
@@ -135,7 +138,7 @@
 
 
   function triggerCondense(control, opts){
-    debug('Condense Trigger: '+control.html());  
+    debug('Condense Trigger: '+control.html(), opts);
     var orig = control.parent(); // The original element will be the control's immediate parent.
     var condensed = orig.next(); // The condensed element will be the original immediate next sibling.    
     condensed.show();    
@@ -144,49 +147,64 @@
     condensed.hide(); //briefly flashed the condensed element so we can get the target width/height
     var orig_w  = orig.width();
     var orig_h = orig.height();
-    orig.animate({height:con_h, width:con_w, opacity: 1}, opts.lessSpeed, opts.easing,
-      function(){
+    if (opts.animate) {
+        orig.animate({height:con_h, width:con_w, opacity: 1}, opts.lessSpeed, opts.easing,
+          function(){
+            orig.height(orig_h).width(orig_w).hide();
+            condensed.show();
+          });
+    } else {
         orig.height(orig_h).width(orig_w).hide();
-        condensed.show(); 
-      });
+        condensed.show();
+    }
   }
 
 
   function triggerExpand(control, opts){
-    debug('Expand Trigger: '+control.html());    
+    debug('Expand Trigger: '+control.html(), opts);
     var condensed = control.parent(); // The condensed element will be the control's immediate parent.
     var orig = condensed.prev(); // The original element will be the condensed immediate previous sibling.
     orig.show();
     var orig_w  = orig.width();
     var orig_h = orig.height();
-    orig.width(condensed.width()+"px").height(condensed.height()+"px"); 
+    orig.width(condensed.width()+"px").height(condensed.height()+"px");
     condensed.hide();
-    orig.animate({height:orig_h, width:orig_w, opacity: 1}, opts.moreSpeed, opts.easing);
+    if (opts.animate) {
+        orig.animate({height:orig_h, width:orig_w, opacity: 1}, opts.moreSpeed, opts.easing);
+    } else {
+        orig.show({height:orig_h, width:orig_w, opacity: 1}, opts.moreSpeed, opts.easing);
+        orig.removeAttr('style');
+    }
     if(condensed.attr('id')){
       var idAttr = condensed.attr('id');
       condensed.attr('id','condensed_'+idAttr);
       orig.attr('id',idAttr);
-    } 
+    }
   }
 
 
   /**
    * private function for debugging
    */
-  function debug($obj) {if (window.console && window.console.log){window.console.log($obj);}};
-
+  function debug($obj, opts) {
+      if (opts.debug && window.console && window.console.log) {
+          window.console.log($obj);
+      }
+  }
 
   // plugin defaults
   $.fn.condense.defaults = {
     condensedLength: 200,  
     minTrail: 20,
     delim: " ",
-    moreText: "[more]",  
+    moreText: "[more]",
     lessText: "[less]",  
-    ellipsis: " ( ... )",  
-    moreSpeed: "normal",  
+    ellipsis: " ( ... )",
+    moreSpeed: "normal",
     lessSpeed: "normal",
-    easing: "linear"
+    easing: "linear",
+    debug: false,
+    animate: false
   };
 
 })(jQuery);
